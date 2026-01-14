@@ -5,6 +5,7 @@ import {uploadOnCloudinary} from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken"
 import mongoose from "mongoose";
+import { v2 as cloudinary } from "cloudinary";
 
 
 const generateAccessAndRefereshTokens = async(userId) =>{
@@ -234,8 +235,6 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 const changeCurrentPassword = asyncHandler(async(req, res) => {
     const {oldPassword, newPassword} = req.body
 
-    
-
     const user = await User.findById(req.user?._id)
     const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
 
@@ -286,6 +285,28 @@ const updateAccountDetails = asyncHandler(async(req, res) => {
     .json(new ApiResponse(200, user, "Account details updated successfully"))
 });
 
+const getPublicIdFromUrl = (url) => {
+  if (!url) return null;
+
+  const parts = url.split("/");
+  const uploadIndex = parts.indexOf("upload");
+
+  // Everything after "upload"
+  const publicPath = parts
+    .slice(uploadIndex + 1)
+    .join("/")
+    .replace(/^v\d+\//, "") // remove version
+    .replace(/\.[^/.]+$/, ""); // remove extension
+
+  return publicPath;
+};
+
+
+const deleteFromCloudinary = async (publicId) => {
+  if (!publicId) return;
+  await cloudinary.uploader.destroy(publicId);
+};
+
 const updateUserAvatar = asyncHandler(async(req, res) => {
     const avatarLocalPath = req.file?.path
 
@@ -294,10 +315,19 @@ const updateUserAvatar = asyncHandler(async(req, res) => {
     }
 
     //TODO: delete old image - assignment
+    // 1. Get user
+    const user_id = await User.findById(req.user?._id);
+    console.log("Avatar URL:", user_id?.avatar);
+
+    // 2. Delete old avatar if exists
+    if (user_id?.avatar) {
+        const publicId = getPublicIdFromUrl(user_id.avatar);
+        await deleteFromCloudinary(publicId);
+    }
 
     const avatar = await uploadOnCloudinary(avatarLocalPath)
 
-    if (!avatar.url) {
+    if (!avatar?.url) {
         throw new ApiError(400, "Error while uploading on avatar")
         
     }
@@ -327,7 +357,14 @@ const updateUserCoverImage = asyncHandler(async(req, res) => {
     }
 
     //TODO: delete old image - assignment
+    // 1. Get user
+    const user_id = await User.findById(req.user?._id);
 
+    // 2. Delete old avatar if exists
+    if (user_id?.coverImage) {
+        const publicId = getPublicIdFromUrl(user_id.coverImage);
+        await deleteFromCloudinary(publicId);
+    }
 
     const coverImage = await uploadOnCloudinary(coverImageLocalPath)
 
